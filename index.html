@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>HMFB Client — Demo corregido</title>
+
+<!-- jsPDF CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+  :root{
+    --violet1:#bb00ff;
+    --violet2:#ff33ff;
+    --glow:#ff66ff;
+    --bg:#060006;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;width:100%;background:radial-gradient(circle at top left,#0a0010 0%, #000 100%);color:#fff;font-family:"Times New Roman",serif;overflow:auto}
+
+  /* Background canvas full screen */
+  canvas#bgCanvas{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;display:block}
+
+  /* Page layout */
+  .page {
+    position:relative;
+    z-index:2;
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:18px;
+    padding:36px 20px;
+  }
+
+  /* Top logo centered */
+  .top-logo {
+    width: min(420px, 24vw);
+    max-width:420px;
+    display:block;
+    margin: 6px auto;
+    filter:drop-shadow(0 0 20px rgba(187,0,255,0.18));
+    animation: float 5s ease-in-out infinite, glow 3s ease-in-out infinite;
+  }
+  @keyframes float { 0%{transform:translateY(0)} 50%{transform:translateY(-10px)} 100%{transform:translateY(0)} }
+  @keyframes glow { 0%{filter:drop-shadow(0 0 8px #b300ff)} 50%{filter:drop-shadow(0 0 22px #d966ff)} 100%{filter:drop-shadow(0 0 8px #b300ff)} }
+
+  /* Main container */
+  .container {
+    width:100%;
+    max-width:1100px;
+    background: linear-gradient(180deg, rgba(18,3,25,0.65), rgba(8,0,10,0.55));
+    border-radius:14px;
+    border:1px solid rgba(187,0,255,0.12);
+    padding:18px;
+    box-shadow:0 18px 60px rgba(0,0,0,0.65);
+    display:grid;
+    gap:18px;
+    grid-template-columns: 1fr 420px;
+    align-items:start;
+  }
+  @media (max-width:980px){ .container { grid-template-columns: 1fr; padding:14px } }
+
+  /* Left column: forms and panel */
+  .left {
+    padding:6px;
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+  }
+
+  .card {
+    background: rgba(255,255,255,0.02);
+    border-radius:12px;
+    padding:14px;
+    border:1px solid rgba(255,255,255,0.03);
+    box-shadow: 0 8px 28px rgba(0,0,0,0.5);
+  }
+
+  .title { text-align:center; margin-bottom:6px }
+  .title h1 { font-family:'Brush Script MT',cursive; color:var(--violet1); font-size: clamp(1.6rem,3.2vw,2.4rem); text-shadow:0 0 18px rgba(187,0,255,0.12) }
+  .muted { color:#cfc9df; font-size:0.95rem }
+
+  label{display:block;margin-top:8px;color:#e6dbff;font-size:0.95rem}
+  input[type="text"], input[type="password"], input[type="email"], input[type="search"]{
+    width:100%; padding:10px 12px; margin-top:8px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.02); color:#fff; font-size:1rem;
+  }
+
+  .row{display:flex;gap:8px;align-items:center}
+  .btn {
+    padding:10px 18px; border-radius:10px; border:none;
+    background:linear-gradient(90deg,var(--violet1),var(--violet2)); color:#fff; cursor:pointer;
+    font-family:'Brush Script MT',cursive; font-size:1rem; box-shadow:0 8px 26px rgba(187,0,255,0.12);
+    transition: transform .15s ease, box-shadow .15s ease;
+  }
+  .btn:hover{ transform: translateY(-3px); box-shadow:0 20px 48px rgba(187,0,255,0.18) }
+
+  /* Right column: plans */
+  .right {
+    padding:6px;
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+    align-items:stretch;
+  }
+  .plan {
+    display:flex; justify-content:space-between; align-items:center;
+    background: linear-gradient(180deg, rgba(30,0,60,0.5), rgba(20,0,40,0.45));
+    padding:12px; border-radius:10px; border:1px solid rgba(187,0,255,0.08);
+    transition: transform .18s ease, box-shadow .18s ease, border-color .18s;
+  }
+  .plan:hover{ transform:translateY(-6px); box-shadow:0 18px 36px rgba(187,0,255,0.12); border-color:var(--glow) }
+  .plan h3{ margin:0; font-family:'Brush Script MT',cursive; color:var(--glow); font-size:1.1rem }
+  .plan .desc { color:#f6eefe; font-size:0.95rem }
+
+  .welcomeLine { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap }
+
+  .receipts-list { margin-top:10px; display:flex; flex-direction:column; gap:8px; max-height:220px; overflow:auto }
+  .receipt-item { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px; border-radius:8px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.03) }
+
+  .msg { margin-top:8px; color:#ff9aa8; min-height:1.1rem; }
+
+  /* overlay processing */
+  .overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:9999; pointer-events:none; opacity:0; transition:opacity .18s ease; }
+  .overlay.visible { opacity:1; pointer-events:auto }
+  .overlay-card { background: linear-gradient(180deg, rgba(18,3,25,0.95), rgba(6,0,12,0.95)); padding:18px; border-radius:12px; border:1px solid rgba(255,255,255,0.04); box-shadow:0 20px 60px rgba(0,0,0,0.7); display:flex; flex-direction:column; align-items:center; gap:12px; min-width:300px }
+  .spinner { width:54px; height:54px; border-radius:50%; border:6px solid rgba(255,255,255,0.06); border-top-color:var(--glow); animation:spin 1s linear infinite }
+  @keyframes spin { to { transform: rotate(360deg) } }
+  .overlay-text { font-size:1.02rem }
+
+  /* small helpers */
+  .mutedSmall { color:#cfc9df; font-size:0.9rem }
+
+</style>
+</head>
+<body>
+
+<!-- background canvas -->
+<canvas id="bgCanvas"></canvas>
+
+<!-- main page -->
+<div class="page">
+  <!-- single centered logo -->
+  <img src="ChatGPT_Image_30_oct_2025_18_51_42.webp" alt="HMFB Logo" class="top-logo">
+
+  <div class="container">
+
+    <!-- left: forms / panel -->
+    <div class="left">
+
+      <div class="title">
+        <h1>HMFB Client</h1>
+        <p class="muted">El client más avanzado — estilo violeta y negro</p>
+      </div>
+
+      <!-- LOGIN card -->
+      <div id="card-login" class="card">
+        <div style="width:100%">
+          <strong>Iniciar sesión</strong>
+          <label for="login-username">Usuario</label>
+          <input id="login-username" type="text" placeholder="usuario (ej: ubz)" />
+          <label for="login-password">Contraseña</label>
+          <input id="login-password" type="password" placeholder="contraseña" />
+          <div class="row" style="margin-top:10px">
+            <button class="btn" onclick="handleLogin()">Entrar</button>
+            <div style="flex:1"></div>
+          </div>
+          <div class="msg" id="login-msg"></div>
+          <p class="mutedSmall" style="margin-top:10px">¿No tienes cuenta? <span style="color:var(--glow);cursor:pointer" onclick="showView('register')">Regístrate</span></p>
+          <!-- small inline logo -->
+          <div style="display:flex;justify-content:center;margin-top:10px">
+            <img src="ChatGPT_Image_30_oct_2025_18_51_42.webp" alt="logo small" style="max-width:160px;width:22vw;opacity:0.95;border-radius:6px" />
+          </div>
+        </div>
+      </div>
+
+      <!-- REGISTER card -->
+      <div id="card-register" class="card" style="display:none">
+        <div style="width:100%">
+          <strong>Registrar cuenta</strong>
+          <label for="reg-username">Usuario</label>
+          <input id="reg-username" type="text" placeholder="usuario" />
+          <label for="reg-email">Correo electrónico</label>
+          <input id="reg-email" type="email" placeholder="correo@ejemplo.com" />
+          <label for="reg-password">Contraseña</label>
+          <input id="reg-password" type="password" placeholder="contraseña" />
+          <div class="row" style="margin-top:10px">
+            <button class="btn" onclick="handleRegister()">Crear cuenta</button>
+            <div style="flex:1"></div>
+          </div>
+          <div class="msg" id="register-msg"></div>
+          <p class="mutedSmall" style="margin-top:10px">¿Ya tienes cuenta? <span style="color:var(--glow);cursor:pointer" onclick="showView('login')">Inicia sesión</span></p>
+        </div>
+      </div>
+
+      <!-- PANEL card (hidden until login) -->
+      <div id="card-panel" class="card" style="display:none">
+        <div style="width:100%">
+          <div class="welcomeLine">
+            <div><strong id="welcome-text">Bienvenido,</strong> <span id="user-display" style="font-family:'Brush Script MT',cursive;color:var(--glow)"></span></div>
+            <div><button class="btn" onclick="handleLogout()">Cerrar sesión</button></div>
+          </div>
+
+          <p class="mutedSmall" style="margin-top:8px">Aquí verás tu información de suscripción y comprobantes.</p>
+
+          <div id="receipt-area" style="margin-top:10px"></div>
+
+          <div style="margin-top:12px">
+            <label for="search-receipts" class="mutedSmall">Buscar comprobantes (ID o plan)</label>
+            <input id="search-receipts" type="search" placeholder="ej: HMFB-2025 o 3 Meses" oninput="renderReceiptsList()" />
+            <div class="receipts-list" id="receipts-list"></div>
+          </div>
+
+          <div style="margin-top:12px">
+            <button id="download-btn" class="btn" onclick="handleDownload()" style="display:none">Descargar HMFB Client</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- right: plans -->
+    <div class="right">
+      <div class="card" style="text-align:center">
+        <strong>Planes de Suscripción</strong>
+        <p class="mutedSmall">Selecciona el plan que prefieras. (Pago simulado — demo)</p>
+      </div>
+
+      <div class="plan" data-plan="1 Mes">
+        <div>
+          <h3>⚡ 1 Mes</h3>
+          <div class="desc">Acceso básico por 30 días</div>
+        </div>
+        <div style="text-align:right">
+          <div class="desc" style="font-weight:700">$5 USD</div>
+          <button class="btn" onclick="buyPlan('1 Mes')">Pagar</button>
+        </div>
+      </div>
+
+      <div class="plan" data-plan="3 Meses">
+        <div>
+          <h3>⚡ 3 Meses</h3>
+          <div class="desc">Ahorra — mejor valor</div>
+        </div>
+        <div style="text-align:right">
+          <div class="desc" style="font-weight:700">$12 USD</div>
+          <button class="btn" onclick="buyPlan('3 Meses')">Pagar</button>
+        </div>
+      </div>
+
+      <div class="plan" data-plan="6 Meses">
+        <div>
+          <h3>⚡ 6 Meses</h3>
+          <div class="desc">Soporte prioritario</div>
+        </div>
+        <div style="text-align:right">
+          <div class="desc" style="font-weight:700">$20 USD</div>
+          <button class="btn" onclick="buyPlan('6 Meses')">Pagar</button>
+        </div>
+      </div>
+
+      <div class="plan" data-plan="Permanente">
+        <div>
+          <h3>⚡ Permanente</h3>
+          <div class="desc">Acceso de por vida</div>
+        </div>
+        <div style="text-align:right">
+          <div class="desc" style="font-weight:700">$35 USD</div>
+          <button class="btn" onclick="buyPlan('Permanente')">Pagar</button>
+        </div>
+      </div>
+
+      <div class="card" style="text-align:center">
+        <button class="btn" onclick="openDiscord()">Unirse al Discord</button>
+        <div class="mutedSmall" style="margin-top:8px">Enlace externo</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- processing overlay -->
+<div id="overlay" class="overlay" aria-hidden="true">
+  <div class="overlay-card">
+    <div id="overlay-spinner" class="spinner"></div>
+    <div id="overlay-text" class="overlay-text">Procesando compra...</div>
+  </div>
+</div>
+
+<script>
+/* ==========================
+   Background particles canvas
+   ========================== */
+const canvas = document.getElementById('bgCanvas');
+const ctx = canvas.getContext('2d');
+let W = canvas.width = window.innerWidth;
+let H = canvas.height = window.innerHeight;
+window.addEventListener('resize', ()=>{ W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; initParticles(); });
+
+function rand(min,max){ return Math.random()*(max-min)+min; }
+let NUM = Math.max(60, Math.floor((window.innerWidth * window.innerHeight) / 120000));
+let particles = [];
+function initParticles(){
+  NUM = Math.max(40, Math.floor((window.innerWidth * window.innerHeight) / 120000));
+  particles = [];
+  for(let i=0;i<NUM;i++){
+    particles.push({
+      x: Math.random()*W,
+      y: Math.random()*H,
+      vx: (Math.random()-0.5)*0.6,
+      vy: - (0.2 + Math.random()*0.9),
+      r: 0.6 + Math.random()*3,
+      hue: 270 + Math.random()*30,
+      a: 0.25 + Math.random()*0.6
+    });
+  }
+}
+initParticles();
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  // subtle vignette background
+  let g = ctx.createRadialGradient(W*0.5, H*0.35, Math.min(W,H)*0.05, W*0.5, H*0.5, Math.max(W,H)*0.9);
+  g.addColorStop(0, 'rgba(12,0,18,0.0)');
+  g.addColorStop(1, 'rgba(0,0,0,0.6)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,W,H);
+
+  // draw particles
+  for(let p of particles){
+    p.x += p.vx;
+    p.y += p.vy;
+    if(p.y < -50){ p.y = H + 20; p.x = Math.random()*W; }
+    if(p.x < -20) p.x = W + 20;
+    if(p.x > W + 20) p.x = -20;
+
+    ctx.beginPath();
+    ctx.fillStyle = 'hsla(' + p.hue + ',85%,' + (35 + (p.r*2)) + '%,' + p.a + ')';
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // connect lines
+  for(let i=0;i<particles.length;i++){
+    for(let j=i+1;j<particles.length;j++){
+      const dx = particles[i].x - particles[j].x;
+      const dy = particles[i].y - particles[j].y;
+      const d = Math.sqrt(dx*dx + dy*dy);
+      if(d < 110){
+        const alpha = 0.24*(1 - d/110);
+        ctx.strokeStyle = 'rgba(187,0,255,'+ alpha +')';
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(particles[i].x, particles[i].y);
+        ctx.lineTo(particles[j].x, particles[j].y);
+        ctx.stroke();
+      }
+    }
+  }
+
+  requestAnimationFrame(draw);
+}
+draw();
+
+/* ==========================
+   Views & localStorage
+   ========================== */
+const cardLogin = document.getElementById('card-login');
+const cardRegister = document.getElementById('card-register');
+const cardPanel = document.getElementById('card-panel');
+
+const overlay = document.getElementById('overlay');
+const overlaySpinner = document.getElementById('overlay-spinner');
+const overlayText = document.getElementById('overlay-text');
+
+function showView(name){
+  cardLogin.style.display = 'none';
+  cardRegister.style.display = 'none';
+  cardPanel.style.display = 'none';
+  if(name === 'login') cardLogin.style.display = 'block';
+  if(name === 'register') cardRegister.style.display = 'block';
+  if(name === 'panel') cardPanel.style.display = 'block';
+}
+
+let users = JSON.parse(localStorage.getItem('hmfb_users') || '[]');
+let current = JSON.parse(localStorage.getItem('hmfb_current') || 'null');
+
+function persistUsers(){ localStorage.setItem('hmfb_users', JSON.stringify(users)); }
+function persistCurrent(){ localStorage.setItem('hmfb_current', JSON.stringify(current)); }
+
+function setMsg(id, text, ok){
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.style.color = ok ? '#a6ffb7' : '#ff9aa8';
+  el.textContent = text;
+}
+
+/* Register / Login / Logout */
+function handleRegister(){
+  const username = document.getElementById('reg-username').value.trim();
+  const email = document.getElementById('reg-email').value.trim();
+  const password = document.getElementById('reg-password').value;
+  if(!username || !email || !password){ setMsg('register-msg','Completa todos los campos', false); return; }
+  if(users.some(u=>u.username.toLowerCase()===username.toLowerCase())){ setMsg('register-msg','Usuario ya existe', false); return; }
+  users.push({ username, email, password, subscription: null, receipts: [] });
+  persistUsers();
+  setMsg('register-msg','Registro correcto. Inicia sesión.', true);
+  setTimeout(()=>{ showView('login'); setMsg('register-msg',''); }, 900);
+}
+
+function handleLogin(){
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value;
+  const user = users.find(u=>u.username===username && u.password===password);
+  if(!user){ setMsg('login-msg','Usuario o contraseña incorrectos', false); return; }
+  current = user;
+  persistCurrent();
+  document.getElementById('user-display').textContent = current.username;
+  setMsg('login-msg','');
+  initPanelForUser();
+  showView('panel');
+}
+
+function handleLogout(){
+  current = null;
+  persistCurrent();
+  document.getElementById('login-username').value = '';
+  document.getElementById('login-password').value = '';
+  document.getElementById('download-btn').style.display = 'none';
+  showView('login');
+}
+
+/* Receipt helpers */
+function makeReceiptCode(){ const n = Math.floor(Math.random()*900000)+100000; return `HMFB-2025-${n}`; }
+function daysForPlan(plan){ if(plan==='1 Mes') return 30; if(plan==='3 Meses') return 90; if(plan==='6 Meses') return 180; return null; }
+function addDays(date, days){ const d = new Date(date); d.setDate(d.getDate()+days); return d; }
+function formatDate(d){ if(!d) return 'Sin caducidad'; return new Date(d).toLocaleDateString(); }
+
+/* Overlay helpers */
+function showProcessing(){ overlay.classList.add('visible'); overlaySpinner.style.display='block'; overlayText.textContent='Procesando compra...'; }
+function showSuccess(){ overlaySpinner.style.display='none'; overlayText.innerHTML='✅ Compra realizada con éxito'; setTimeout(()=> overlay.classList.remove('visible'), 1600); }
+
+/* Buy / PDF generation */
+async function buyPlan(plan){
+  if(!current){ setMsg('login-msg','Inicia sesión para comprar', false); showView('login'); return; }
+  if(!confirm('Simulación: pagar ' + plan + ' ? (esto solo simula)')) return;
+
+  // show processing
+  showProcessing();
+  await new Promise(r=>setTimeout(r, 1000));
+
+  const purchaseDate = new Date();
+  const days = daysForPlan(plan);
+  const expiration = days ? addDays(purchaseDate, days) : null;
+  const price = plan==='1 Mes'?5:plan==='3 Meses'?12:plan==='6 Meses'?20:35;
+  const receipt = {
+    id: makeReceiptCode(),
+    plan,
+    purchaseDate: purchaseDate.toISOString(),
+    expiration: expiration ? expiration.toISOString() : null,
+    price
+  };
+
+  // save to users
+  const idx = users.findIndex(u=>u.username===current.username);
+  if(idx !== -1){
+    users[idx].subscription = plan;
+    users[idx].receipts = users[idx].receipts || [];
+    users[idx].receipts.push(receipt);
+    current = users[idx];
+    persistUsers();
+    persistCurrent();
+  } else {
+    current.subscription = plan;
+    current.receipts = current.receipts || [];
+    current.receipts.push(receipt);
+    persistCurrent();
+  }
+
+  // update UI
+  initPanelForUser();
+  await new Promise(r=>setTimeout(r, 450));
+  showSuccess();
+
+  // generate + auto-download PDF
+  await generateReceiptPDF(receipt, current);
+  alert('Comprobante generado y descargado: ' + receipt.id);
+}
+
+/* PDF generator using jsPDF (improved layout, logo + text) */
+async function generateReceiptPDF(receipt, user){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit:'pt', format:'a4' });
+
+  // attempt to load logo
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.src = 'ChatGPT_Image_30_oct_2025_18_51_42.webp';
+
+  await new Promise((resolve) => {
+    img.onload = () => resolve();
+    img.onerror = () => resolve();
+  });
+
+  // convert to dataURL via temporary canvas to ensure compatibility
+  let imgData = null;
+  if(img.complete && img.naturalWidth){
+    try{
+      const c = document.createElement('canvas');
+      const maxW = 400;
+      const scale = Math.min(1, maxW / img.naturalWidth);
+      c.width = img.naturalWidth * scale;
+      c.height = img.naturalHeight * scale;
+      const ctx2 = c.getContext('2d');
+      ctx2.fillStyle = '#000';
+      ctx2.fillRect(0,0,c.width,c.height);
+      ctx2.drawImage(img,0,0,c.width,c.height);
+      imgData = c.toDataURL('image/png');
+    }catch(e){ imgData = null; }
+  }
+
+  // Layout
+  const margin = 40;
+  // Header bar
+  doc.setFillColor(18, 0, 30);
+  doc.rect(0, 0, 595, 72, 'F');
+
+  // Logo left
+  if(imgData){
+    const w = 100;
+    const h = (img.naturalHeight / (img.naturalWidth || img.naturalHeight)) * w;
+    doc.addImage(imgData, 'PNG', margin, 12, w, h);
+  }
+
+  // Title
+  doc.setFontSize(20);
+  doc.setTextColor(187,0,255);
+  doc.setFont('helvetica','bold');
+  doc.text('HMFB - Comprobante de compra', margin + 120, 32);
+
+  // Line
+  doc.setDrawColor(255,102,255);
+  doc.setLineWidth(1);
+  doc.line(margin, 82, 595 - margin, 82);
+
+  // receipt box
+  let y = 100;
+  doc.setFillColor(6,0,12);
+  doc.roundedRect(margin, y, 595 - margin*2, 200, 6, 6, 'F');
+  doc.setDrawColor(80,20,100);
+  doc.setLineWidth(0.8);
+  doc.roundedRect(margin, y, 595 - margin*2, 200, 6, 6);
+  y += 24;
+
+  // Text details
+  doc.setFontSize(12);
+  doc.setTextColor(255,255,255);
+  doc.setFont('helvetica','normal');
+  doc.text(`Comprobante ID: ${receipt.id}`, margin + 12, y); y += 18;
+  doc.text(`Usuario: ${user.username}`, margin + 12, y); y += 18;
+  doc.text(`Correo: ${user.email || '—'}`, margin + 12, y); y += 18;
+  doc.text(`Plan: ${receipt.plan}`, margin + 12, y); y += 18;
+  const purchase = new Date(receipt.purchaseDate);
+  doc.text(`Fecha de compra: ${purchase.toLocaleString()}`, margin + 12, y); y += 18;
+  const expText = receipt.expiration ? new Date(receipt.expiration).toLocaleString() : 'Sin caducidad';
+  doc.text(`Expiración: ${expText}`, margin + 12, y); y += 28;
+
+  // Price block
+  doc.setFontSize(14);
+  doc.setFont('helvetica','bold');
+  doc.text(`Precio: $${receipt.price} USD`, 595 - margin - 140, 100 + 60);
+
+  // Footer
+  doc.setFontSize(10);
+  doc.setTextColor(200,200,200);
+  doc.text('HMFB Client © 2025 — Comprobante generado automáticamente (demo).', margin + 12, 100 + 220);
+
+  // Save automatically
+  const filename = `${receipt.id}.pdf`;
+  doc.save(filename);
+}
+
+/* Panel init & receipts rendering */
+function initPanelForUser(){
+  if(!current) return;
+  document.getElementById('user-display').textContent = current.username;
+  const downloadBtn = document.getElementById('download-btn');
+  if(current.subscription) downloadBtn.style.display = 'inline-block'; else downloadBtn.style.display = 'none';
+
+  // latest receipt
+  const area = document.getElementById('receipt-area');
+  area.innerHTML = '';
+  if(current.receipts && current.receipts.length){
+    const last = current.receipts[current.receipts.length - 1];
+    const purchase = new Date(last.purchaseDate);
+    const expText = last.expiration ? formatDate(last.expiration) : 'Sin caducidad';
+    area.innerHTML = `<div style="padding:10px;border-radius:8px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.03)">
+      <strong>Último comprobante:</strong><br/>
+      <div>Comprobante: ${last.id}</div>
+      <div>Plan: ${last.plan}</div>
+      <div>Compra: ${purchase.toLocaleString()}</div>
+      <div>Expiración: ${expText}</div>
+      <div style="margin-top:8px"><button class="btn" onclick="openReceiptViewer('${last.id}')">Ver / Exportar</button></div>
+    </div>`;
+  } else {
+    area.innerHTML = '<div class="mutedSmall">Aún no tienes compras registradas.</div>';
+  }
+
+  renderReceiptsList();
+}
+
+/* render receipts list */
+function renderReceiptsList(){
+  const list = document.getElementById('receipts-list'); list.innerHTML = '';
+  if(!current || !current.receipts || !current.receipts.length){ list.innerHTML = '<div class="mutedSmall">No hay comprobantes.</div>'; return; }
+  const q = (document.getElementById('search-receipts').value || '').trim().toLowerCase();
+  const filtered = current.receipts.filter(r => {
+    const id = (r.id||'').toLowerCase();
+    const plan = (r.plan||'').toLowerCase();
+    return !q || id.includes(q) || plan.includes(q);
+  }).slice().reverse();
+
+  for(const r of filtered){
+    const purchase = new Date(r.purchaseDate);
+    const div = document.createElement('div');
+    div.className = 'receipt-item';
+    div.innerHTML = `<div><strong>${r.id}</strong><div style="font-size:0.88rem;color:#dcd2ff">${r.plan} • ${purchase.toLocaleDateString()}</div></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn" onclick="openReceiptViewer('${r.id}')">Ver</button>
+        <button class="btn" onclick="generateAndDownloadReceiptPDF('${r.id}')">Exportar PDF</button>
+      </div>`;
+    list.appendChild(div);
+  }
+}
+
+/* open printable viewer */
+function openReceiptViewer(id){
+  const r = (current.receipts||[]).find(x=>x.id===id); if(!r) return alert('Comprobante no encontrado');
+  const purchase = new Date(r.purchaseDate);
+  const expText = r.expiration ? new Date(r.expiration).toLocaleString() : 'Sin caducidad';
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Comprobante ${r.id}</title><style>body{background:#070007;color:#fff;font-family:monospace;padding:24px}.box{max-width:720px;margin:0 auto;background:linear-gradient(180deg,#0b0011,#000);padding:20px;border-radius:8px;border:1px solid rgba(255,255,255,0.06)}h1{color:${getComputedStyle(document.documentElement).getPropertyValue('--glow')||'#ff66ff'}}pre{white-space:pre-wrap;background:rgba(255,255,255,0.02);padding:12px;border-radius:6px}.btn{display:inline-block;margin-top:12px;padding:8px 12px;border-radius:8px;background:#6a00ff;color:#fff;border:none;cursor:pointer}</style></head><body><div class="box"><h1>Comprobante ${r.id}</h1><pre>Usuario: ${current.username}\nCorreo: ${current.email || '—'}\nPlan: ${r.plan}\nFecha de compra: ${purchase.toLocaleString()}\nExpiración: ${expText}\n\nCódigo: ${r.id}</pre><div><button class="btn" onclick="window.print()">Guardar / Exportar a PDF</button> <button class="btn" onclick="window.close()">Cerrar</button></div></div></body></html>`;
+  const w = window.open('', '_blank', 'noopener'); w.document.write(html); w.document.close();
+}
+
+/* generate & download PDF by id */
+async function generateAndDownloadReceiptPDF(id){
+  const r = (current.receipts||[]).find(x=>x.id===id); if(!r) return alert('No encontrado'); await generateReceiptPDF(r, current); alert('PDF generado y descargado: ' + r.id);
+}
+
+/* handleDownload (simulated) */
+function handleDownload(){
+  if(!current || !current.subscription){ alert('Necesitas una suscripción activa para descargar.'); return; }
+  alert('Descarga iniciada (simulado) — Descargar HMFB Client');
+}
+
+/* Discord */
+function openDiscord(){ window.open('https://discord.com','_blank'); }
+
+/* on load: rehydrate state */
+(function(){
+  if(current){
+    const found = users.find(u=>u.username===current.username);
+    if(found) current = found;
+    persistCurrent();
+    initPanelForUser();
+    showView('panel');
+  } else {
+    showView('login');
+  }
+})();
+</script>
+</body>
+</html>
+
